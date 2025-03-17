@@ -1,25 +1,32 @@
 import time
-from collections import deque
-from pw_bot_utils import TRIGGER_WORD, capture_chat_text, send_chat_message
-from pw_openai_utils import generate_reply
+import logging
+from pw_bot_utils import capture_chat_text
 from playwright.sync_api import sync_playwright
 from pw_login_utils import login_to_reddit, open_reddit_chat
+from pw_followup_utils import handle_followup
+from collections import deque
+from pw_terminal import print_banner, print_random_quote, start_terminal_progress
 
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+recent_messages = deque(maxlen=10)  # ✅ Track last 10 messages to prevent duplicate replies
 
 def main():
+    start_terminal_progress()
+
     with sync_playwright() as p:  # ✅ Keep Playwright open for the bot
-        browser, page = login_to_reddit(p)  # ✅ Pass Playwright instance
-        open_reddit_chat(page)  # ✅ Use the same page instance
+        browser, page = login_to_reddit(p)
+        open_reddit_chat(page)
 
-        print("\n==============================")
+        print_banner()
+        print("\n==============================================================")
         print("🤖  BOT IS RUNNING!  🤖")
-        print("⚡ Waiting for commands... ⚡")
-        print("==============================\n")
+        print_random_quote()
+        print("==============================================================\n")
 
-        recent_messages = deque(maxlen=5)  # Track last 5 messages
         while True:
             try:
-                time.sleep(5)  # Pause before checking messages again
+                time.sleep(2)  # Pause before checking messages again
 
                 chat_data = capture_chat_text(page)
                 message_text = chat_data["message"]
@@ -30,22 +37,13 @@ def main():
                     print("⚠️ Skipping bot's own message.")
                     continue
 
-                # ✅ Check if message contains the trigger word
-                if any(word in message_text.lower() for word in TRIGGER_WORD):
-                    print(f"🎯 Trigger detected: {message_text}")
+                # ✅ Check for duplicate messages **before calling handle_followup**
+                if message_text in recent_messages:
+                    continue  # ✅ Skip duplicate messages
 
-                    # ✅ Generate a response
-                    response_text = generate_reply(message_text)
-
-                    # ✅ Send the response
-                    send_chat_message(page, response_text, message_sender)
-
-                    # ✅ Add to Recent Messages
-                    recent_messages.append(message_text)
-
-                    print("\n💬 ====================")
-                    print(f"✅ Bot replied:\n{response_text}")
-                    print("==================== 💬\n")
+                # ✅ Use follow-up module to check if bot should reply
+                if handle_followup(page, message_text, message_sender, recent_messages):
+                    continue  # ✅ Follow-up was handled, move to next message
 
             except Exception as e:
                 print(f"❌ Error: {e}")
