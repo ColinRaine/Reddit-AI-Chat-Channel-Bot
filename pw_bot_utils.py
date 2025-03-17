@@ -1,4 +1,3 @@
-
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 import logging
 
